@@ -1,299 +1,128 @@
-import copy
-import sys
-import pygame
-import random
-import numpy as np
+import tkinter as tk
+from tkinter import messagebox
+import math
 
-from constants import *     # Importing all variables from another file
+class TicTacToeApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Tic Tac Toe")
+        self.board = [[' ' for _ in range(3)] for _ in range(3)]
+        self.current_player = 'X'
 
-# Pygame code
-pygame.init()   # Initializing the pygame
-screen = pygame.display.set_mode( (WIDTH, HEIGHT) )     #Display screen size
-pygame.display.set_caption('TIC TAC TOE AI')       # Title display 
-screen.fill( BG_COLOUR )
+        self.buttons = [[None for _ in range(3)] for _ in range(3)]
+        for row in range(3):
+            for col in range(3):
+                button = tk.Button(root, text=' ', font=('Arial', 40), width=5, height=2,
+                                  command=lambda r=row, c=col: self.on_button_click(r, c))
+                button.grid(row=row, column=col)
+                self.buttons[row][col] = button
 
+        self.ai = 'O'
+        self.player = 'X'
 
-class Board:
+    def on_button_click(self, row, col):
+        if self.board[row][col] == ' ' and self.current_player == 'X':
+            self.board[row][col] = 'X'
+            self.buttons[row][col].config(text='X')
+            if self.check_winner('X'):
+                self.show_winner('X')
+                return
+            if self.is_board_full():
+                self.show_draw()
+                return
+            self.current_player = 'O'
+            self.root.after(100, self.ai_move)
 
-    def __init__(self):
-        self.squares = np.zeros( (ROWS, COLS) )
-        # print(self.squares)
-        # self.mark_sqr(1, 1, 2)
-        # print(self.squares)
-        self.empty_sqrs = self.squares 
-        self.marked_sqrs = 0
+    def ai_move(self):
+        best_move = self.find_best_move()
+        if best_move:
+            row, col = best_move
+            self.board[row][col] = 'O'
+            self.buttons[row][col].config(text='O')
+            if self.check_winner('O'):
+                self.show_winner('O')
+                return
+            if self.is_board_full():
+                self.show_draw()
+                return
+            self.current_player = 'X'
 
-    def final_state(self, show=False):
-        '''
-            @return 0 if there is no win yet
-            @return 1 if player 1 wins
-            @return 2 if player 2 wins
-        '''
+    def minimax(self, is_ai_turn):
+        available_moves = [(r, c) for r in range(3) for c in range(3) if self.board[r][c] == ' ']
+        if self.check_winner('O'):
+            return 1
+        if self.check_winner('X'):
+            return -1
+        if self.is_board_full():
+            return 0
 
-        # vertical wins
-        for col in range(COLS):
-            if self.squares[0][col] == self.squares[1][col] == self.squares[2][col] != 0:
-                if show:
-                    color = CIRC_COLOUR if self.squares[0][col] == 2 else CROSS_COLOUR
-                    iPos = (col * SQSIZE + SQSIZE // 2, 20)
-                    fPos = (col * SQSIZE + SQSIZE // 2, HEIGHT - 20)
-                    pygame.draw.line(screen, color, iPos, fPos, LINE_WIDTH)
-                return self.squares[0][col]
-
-        # horizontal wins
-        for row in range(ROWS):
-            if self.squares[row][0] == self.squares[row][1] == self.squares[row][2] != 0:
-                if show:
-                    color = CIRC_COLOUR if self.squares[row][0] == 2 else CROSS_COLOUR
-                    iPos = (20, row * SQSIZE + SQSIZE // 2)
-                    fPos = (WIDTH - 20, row * SQSIZE + SQSIZE // 2)
-                    pygame.draw.line(screen, color, iPos, fPos, LINE_WIDTH)
-                return self.squares[row][0]
-
-        # desc diagonal
-        if self.squares[0][0] == self.squares[1][1] == self.squares[2][2] != 0:
-            if show:
-                color = CIRC_COLOUR if self.squares[1][1] == 2 else CROSS_COLOUR
-                iPos = (20, 20)
-                fPos = (WIDTH - 20, HEIGHT - 20)
-                pygame.draw.line(screen, color, iPos, fPos, CROSS_WIDTH)
-            return self.squares[1][1]
-
-        # asc diagonal
-        if self.squares[2][0] == self.squares[1][1] == self.squares[0][2] != 0:
-            if show:
-                color = CIRC_COLOUR if self.squares[1][1] == 2 else CROSS_COLOUR
-                iPos = (20, HEIGHT - 20)
-                fPos = (WIDTH - 20, 20)
-                pygame.draw.line(screen, color, iPos, fPos, CROSS_WIDTH)
-            return self.squares[1][1]
-
-        # no win yet
-        return 0
-
-    def mark_sqr(self, row, col, player):
-        self.squares[row][col] = player
-        self.marked_sqrs += 1
-
-    def empty_sqr(self, row, col):
-        return self.squares[row][col] == 0
-
-    def get_empty_sqrs(self):
-        empty_sqrs = []
-        for row in range(ROWS):
-            for col in range(COLS):
-                if self.empty_sqr(row, col):
-                    empty_sqrs.append( (row, col) )
-        
-        return empty_sqrs
-
-    def isfull(self):
-        return self.marked_sqrs == 9
-
-    def isempty(self):
-        return self.marked_sqrs == 0
-
-class AI:
-
-    def __init__(self, level=1, player=2):
-        self.level = level
-        self.player = player
-
-
-    def rnd(self, board):
-        empty_sqrs = board.get_empty_sqrs()
-        idx = random.randrange(0, len(empty_sqrs))
-
-        return empty_sqrs[idx] # (row, col)
-
-    # Minimax
-
-    def minimax(self, board, maximizing):
-        
-        # terminal case
-        case = board.final_state()
-
-        # player 1 wins
-        if case == 1:
-            return 1, None # eval, move
-
-        # player 2 wins
-        if case == 2:
-            return -1, None
-
-        # draw
-        elif board.isfull():
-            return 0, None
-
-        if maximizing:
-            max_eval = -100
-            best_move = None
-            empty_sqrs = board.get_empty_sqrs()
-
-            for (row, col) in empty_sqrs:
-                temp_board = copy.deepcopy(board)
-                temp_board.mark_sqr(row, col, 1)
-                eval = self.minimax(temp_board, False)[0]
-                if eval > max_eval:
-                    max_eval = eval
-                    best_move = (row, col)
-
-            return max_eval, best_move
-
-        elif not maximizing:
-            min_eval = 100
-            best_move = None
-            empty_sqrs = board.get_empty_sqrs()
-
-            for (row, col) in empty_sqrs:
-                temp_board = copy.deepcopy(board)
-                temp_board.mark_sqr(row, col, self.player)
-                eval = self.minimax(temp_board, True)[0]
-                if eval < min_eval:
-                    min_eval = eval
-                    best_move = (row, col)
-
-            return min_eval, best_move
-
-
-    def eval(self, main_board):
-        if self.level == 0:
-            # random choice
-            eval = 'random'
-            move = self.rnd(main_board)
+        if is_ai_turn:
+            best_score = -math.inf
+            for (r, c) in available_moves:
+                self.board[r][c] = 'O'
+                score = self.minimax(False)
+                self.board[r][c] = ' '
+                best_score = max(score, best_score)
+            return best_score
         else:
-            # minimax algo choice
-            eval, move = self.minimax(main_board, False)
+            best_score = math.inf
+            for (r, c) in available_moves:
+                self.board[r][c] = 'X'
+                score = self.minimax(True)
+                self.board[r][c] = ' '
+                best_score = min(score, best_score)
+            return best_score
 
-        print(f'AI has chosen to mark the square in pos {move} with an eval of: {eval}')
+    def find_best_move(self):
+        best_move = None
+        best_score = -math.inf
+        available_moves = [(r, c) for r in range(3) for c in range(3) if self.board[r][c] == ' ']
 
-        return move # row, col
+        for (r, c) in available_moves:
+            self.board[r][c] = 'O'
+            score = self.minimax(False)
+            self.board[r][c] = ' '
+            if score > best_score:
+                best_score = score
+                best_move = (r, c)
 
-class Game:
+        return best_move
 
-    def __init__(self):
-        self.board = Board()
-        self.ai = AI()
-        self.player = 1   #1-cross  #2-circles
-        self.gamemode = 'ai' # pvp or ai
-        self.running = True
-        self.show_lines()
+    def check_winner(self, marker):
+        win_combinations = [
+            [self.board[0][0], self.board[0][1], self.board[0][2]],
+            [self.board[1][0], self.board[1][1], self.board[1][2]],
+            [self.board[2][0], self.board[2][1], self.board[2][2]],
+            [self.board[0][0], self.board[1][0], self.board[2][0]],
+            [self.board[0][1], self.board[1][1], self.board[2][1]],
+            [self.board[0][2], self.board[1][2], self.board[2][2]],
+            [self.board[0][0], self.board[1][1], self.board[2][2]],
+            [self.board[2][0], self.board[1][1], self.board[0][2]],
+        ]
+        return [marker, marker, marker] in win_combinations
 
+    def is_board_full(self):
+        return all(cell != ' ' for row in self.board for cell in row)
 
-    def show_lines(self):
-        # bg
-        screen.fill( BG_COLOUR )
+    def show_winner(self, winner):
+        for row in range(3):
+            for col in range(3):
+                if self.check_winner_line(winner, row, col):
+                    self.buttons[row][col].config(bg='green')
+        messagebox.showinfo("Game Over", f"{winner} wins!")
+        self.root.quit()
 
-        # vertical
-        pygame.draw.line(screen, LINE_COLOR, (SQSIZE, 0), (SQSIZE, HEIGHT), LINE_WIDTH)
-        pygame.draw.line(screen, LINE_COLOR, (WIDTH - SQSIZE, 0), (WIDTH - SQSIZE, HEIGHT), LINE_WIDTH)
+    def show_draw(self):
+        messagebox.showinfo("Game Over", "It's a draw!")
+        self.root.quit()
 
-        # horizontal
-        pygame.draw.line(screen, LINE_COLOR, (0, SQSIZE), (WIDTH, SQSIZE), LINE_WIDTH)
-        pygame.draw.line(screen, LINE_COLOR, (0, HEIGHT - SQSIZE), (WIDTH, HEIGHT - SQSIZE), LINE_WIDTH)
+    def check_winner_line(self, marker, row, col):
+        return (self.board[row][0] == marker and self.board[row][1] == marker and self.board[row][2] == marker) or \
+               (self.board[0][col] == marker and self.board[1][col] == marker and self.board[2][col] == marker) or \
+               (self.board[0][0] == marker and self.board[1][1] == marker and self.board[2][2] == marker and row == col) or \
+               (self.board[2][0] == marker and self.board[1][1] == marker and self.board[0][2] == marker and row + col == 2)
 
-    def draw_fig(self, row, col):
-        if self.player == 1:
-            # draw cross
-            # desc line
-            start_desc = (col * SQSIZE + OFFSET, row * SQSIZE + OFFSET)
-            end_desc = (col * SQSIZE + SQSIZE - OFFSET, row * SQSIZE + SQSIZE - OFFSET)
-            pygame.draw.line(screen, CROSS_COLOUR, start_desc, end_desc, CROSS_WIDTH)
-            # asc line
-            start_asc = (col * SQSIZE + OFFSET, row * SQSIZE + SQSIZE - OFFSET)
-            end_asc = (col * SQSIZE + SQSIZE - OFFSET, row * SQSIZE + OFFSET)
-            pygame.draw.line(screen, CROSS_COLOUR, start_asc, end_asc, CROSS_WIDTH)
-        
-        elif self.player == 2:
-            # draw circle
-            center = (col * SQSIZE + SQSIZE // 2, row * SQSIZE + SQSIZE // 2)
-            pygame.draw.circle(screen, CIRC_COLOUR, center, RADIUS, CIRC_WIDTH)
-
-
-    def make_move(self, row, col):
-        self.board.mark_sqr(row, col, self.player)
-        self.draw_fig(row, col)
-        self.next_turn()
-
-    def next_turn(self):
-        self.player = self.player % 2 + 1
-
-    def change_gamemode(self):
-        self.gamemode = 'ai' if self.gamemode == 'pvp' else 'pvp'
-
-    def isover(self):
-        return self.board.final_state(show=True) != 0 or self.board.isfull()
-
-    def reset(self):
-        self.__init__()
-
-def main():
-
-    game = Game()
-    board = game.board
-    ai = game.ai
-
-    while True:
-        
-        # pygame events
-        for event in pygame.event.get():
-
-            # quit event
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-
-            # keydown event
-            if event.type == pygame.KEYDOWN:
-
-                # g- gamemode (with 2 players)
-                if event.key == pygame.K_g:
-                    game.change_gamemode()
-
-                # r-restart
-                if event.key == pygame.K_r:
-                    game.reset()
-                    board = game.board
-                    ai = game.ai
-
-                # 0-random ai (Easy level)
-                if event.key == pygame.K_0:
-                    ai.level = 0
-                
-                # 1-random ai
-                if event.key == pygame.K_1:
-                    ai.level = 1
-
-            # click event
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                pos = event.pos
-                # print(event.pos)
-
-                row = pos[1] // SQSIZE
-                col = pos[0] // SQSIZE
-                
-                # human mark sqr
-                if board.empty_sqr(row, col) and game.running:
-                    game.make_move(row, col)
-                    # print(board.squares)
-
-                    if game.isover():
-                        game.running = False
-
-
-        # AI initial call
-        if game.gamemode == 'ai' and game.player == ai.player and game.running:
-
-            # update the screen
-            pygame.display.update()
-
-            # eval
-            row, col = ai.eval(board)
-            game.make_move(row, col)
-
-            if game.isover():
-                game.running = False
-            
-        pygame.display.update()
-
-main()
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = TicTacToeApp(root)
+    root.mainloop()
